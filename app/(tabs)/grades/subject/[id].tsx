@@ -3,7 +3,7 @@ import { useTheme } from "expo-router/react-navigation";
 import { useLocalSearchParams } from "expo-router";
 import { t } from "i18next";
 import React, { useEffect, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,6 +17,7 @@ import List from '@/ui/new/List';
 import Typography from '@/ui/new/Typography';
 import SafeHorizontalView from "@/ui/components/SafeHorizontalView";
 import { useSettingsStore } from '@/stores/settings';
+import { DEFAULT_SUBJECT_COEFFICIENT, useSubjectCoefficientsStore } from '@/stores/subjectCoefficients';
 import { formatScoreForDisplay, getGradeDisplayScale } from '@/utils/grades/scale';
 import { getSubjectAverage } from "@/utils/grades/algorithms/subject";
 import { getCurrentPeriod } from "@/utils/grades/helper/period";
@@ -34,6 +35,10 @@ export default function SubjectModal() {
   const displayScale = getGradeDisplayScale(useSettingsStore(state => state.personalization.gradesDisplayScale));
   const [subject, setSubject] = useState<Subject>();
   const [loading, setLoading] = useState(true);
+  const customCoef = useSubjectCoefficientsStore(state => (subject ? state.coefficients[subject.name] : undefined));
+  const setCoefficient = useSubjectCoefficientsStore(state => state.setCoefficient);
+  const resetCoefficient = useSubjectCoefficientsStore(state => state.resetCoefficient);
+  const coef = customCoef ?? DEFAULT_SUBJECT_COEFFICIENT;
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +179,31 @@ export default function SubjectModal() {
               </List.Trailing>
             </List.Item>
           ))}
+        </List.Section>
+
+        <List.Section>
+          <List.SectionTitle>
+            <List.Label>Coefficient de la matière</List.Label>
+          </List.SectionTitle>
+          <List.Item>
+            <Typography variant="title">Coefficient</Typography>
+            <Typography variant="body1" color="textSecondary">
+              Utilisé pour la moyenne générale
+            </Typography>
+            <List.Trailing>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                <Pressable hitSlop={12} onPress={() => setCoefficient(subject.name, Math.max(0, coef - 0.5))}>
+                  <Typography variant="title">−</Typography>
+                </Pressable>
+                <Pressable onLongPress={() => resetCoefficient(subject.name)}>
+                  <Typography variant="title">{coef}</Typography>
+                </Pressable>
+                <Pressable hitSlop={12} onPress={() => setCoefficient(subject.name, coef + 0.5)}>
+                  <Typography variant="title">+</Typography>
+                </Pressable>
+              </View>
+            </List.Trailing>
+          </List.Item>
         </List.Section>
       </List>
     </>
