@@ -8,7 +8,9 @@ import type { Kid } from "@/services/shared/kid";
 import { Capabilities, ServiceFailure } from "@/services/shared/types";
 import { ScoreProperty } from "@/utils/grades/algorithms/helpers";
 import PapillonMedian from "@/utils/grades/algorithms/median";
-import PapillonSubjectAvg from "@/utils/grades/algorithms/subject";
+import PapillonSubjectAvg, { getSubjectAverage } from "@/utils/grades/algorithms/subject";
+import PapillonSubjectWeightedAvg from "@/utils/grades/algorithms/subjectWeighted";
+import { useSubjectCoefficientsStore } from "@/stores/subjectCoefficients";
 import PapillonGradesAveragesOverTime from "@/utils/grades/algorithms/time";
 import PapillonWeightedAvg from "@/utils/grades/algorithms/weighted";
 import { warn } from "@/utils/logger/logger";
@@ -208,6 +210,25 @@ export function useGradesData(
     await fetchGrades(manager, period, true);
   }, [fetchGrades, period]);
 
+  const subjectCoefficients = useSubjectCoefficientsStore(state => state.coefficients);
+
+  // Moyenne générale avec les coefficients de matière choisis par l'utilisateur.
+  // null tant qu'aucun coefficient n'a été modifié : on garde alors la moyenne du service.
+  const customOverall = useMemo<GradeScore | null>(() => {
+    const hasCustom = subjects.some(s => subjectCoefficients[s.name] !== undefined);
+    if (!hasCustom) { return null; }
+
+    const inputs = subjects.map(s => ({
+      name: s.name,
+      average: isUsableScore(s.studentAverage)
+        ? s.studentAverage.value
+        : getSubjectAverage(s.grades ?? []),
+    }));
+
+    const value = PapillonSubjectWeightedAvg(inputs, subjectCoefficients);
+    return value >= 0 ? { value } : null;
+  }, [subjects, subjectCoefficients]);
+
   const grades = useMemo(() => sortGradesByDateDesc(subjects.flatMap(s => s.grades ?? [])), [subjects]);
 
   const getSubjectById = useCallback(
@@ -227,12 +248,12 @@ export function useGradesData(
       : null;
 
     return {
-      student: serviceAverages.student,
+      student: customOverall ?? serviceAverages.student,
       class: serviceAverages.class,
       min,
       max
     };
-  }, [subjects, serviceAverages]);
+  }, [subjects, serviceAverages, customOverall]);
 
   const history = useMemo(() => {
     const result: Partial<Record<AverageMethodKey, AverageHistoryPoint[]>> = {};
@@ -248,8 +269,9 @@ export function useGradesData(
 
         // For the "subject" method, append the service's own overall average as the
         // most recent point — it's the one actually shown on the report card.
-        if (method === "subject" && serviceAverages.student) {
-          points.push({ average: serviceAverages.student.value, date: new Date() });
+        const overall = customOverall ?? serviceAverages.student;
+        if (method === "subject" && overall) {
+          points.push({ average: overall.value, date: new Date() });
         }
 
         result[method] = points;
@@ -260,13 +282,13 @@ export function useGradesData(
     }
 
     return result;
-  }, [grades, methods, serviceAverages.student]);
+  }, [grades, methods, serviceAverages.student, customOverall]);
 
   return {
     subjects,
     grades,
     averages,
-    isAverageServiceProvided: serviceAverages.student !== null || serviceAverages.class !== null,
+    isAverageServiceProvided: customOverall !== null || serviceAverages.student !== null || serviceAverages.class !== null,
     rank,
     features,
     history,
